@@ -2583,6 +2583,116 @@ def certificateReplace(host, args, session):
        print("Replace complete.")
     return resp.text
 
+def certificateDisplay(host, args, session):
+    """
+         Called by certificate management function. display server/client/
+         authority certificates
+         Example:
+         certificate display server
+         certificate display authority
+         certificate display client
+         @param host: string, the hostname or IP address of the bmc
+         @param args: contains additional arguments used by the certificate
+                      display sub command
+         @param session: the active session to use
+    """
+
+    httpHeader = {'Content-Type': 'application/octet-stream'}
+    httpHeader.update(xAuthHeader)
+    if(args.type.lower() == 'server'):
+        url = "https://" + host + \
+            "/redfish/v1/Managers/bmc/NetworkProtocol/HTTPS/Certificates/1"
+    elif(args.type.lower() == 'client'):
+        url = "https://" + host + \
+            "/redfish/v1/AccountService/LDAP/Certificates/1"
+    elif(args.type.lower() == 'authority'):
+        url = "https://" + host + \
+            "/redfish/v1/Managers/bmc/Truststore/Certificates/1"
+    try:
+        resp = session.get(url, headers=httpHeader, verify=False)
+    except(requests.exceptions.Timeout):
+        return(connectionErrHandler(args.json, "Timeout", None))
+    except(requests.exceptions.ConnectionError) as err:
+        return connectionErrHandler(args.json, "ConnectionError", err)
+    if resp.status_code != 200:
+        print(resp.text)
+        return "Failed to display the certificate"
+    else:
+       print("Display complete.")
+    return resp.text
+
+def certificateLocations(host, args, session):
+    """
+         Called by certificate management function.
+         Example:
+         certificate locations
+         @param host: string, the hostname or IP address of the bmc
+         @param args: contains additional arguments used by the certificate
+                      locations sub command
+         @param session: the active session to use
+    """
+    httpHeader = {'Content-Type': 'application/octet-stream'}
+    httpHeader.update(xAuthHeader)
+    url = "https://" + host + \
+        "/redfish/v1/CertificateService/CertificateLocations/"
+    try:
+        resp = session.get(url, headers=httpHeader, verify=False)
+    except(requests.exceptions.Timeout):
+        return(connectionErrHandler(args.json, "Timeout", None))
+    except(requests.exceptions.ConnectionError) as err:
+        return connectionErrHandler(args.json, "ConnectionError", err)
+    if resp.status_code != 200:
+        print(resp.text)
+        return "Failed to list certificates"
+    else:
+       print("Locations complete.")
+    return resp.text
+
+def certificateGenerateCSR(host, args, session):
+    """
+        Called by certificate management function. Generate CSR for server/
+        client certificates
+        Example:
+        certificate generatecsr server w3.ibm.com IBM US IBM IBM-UNIT NJ EC 2048 prime256v1
+        certificate generatecsr server w3.ibm.com IBM US IBM IBM-UNIT NJ RSA 2048 None
+        certificate generatecsr server w3.ibm.com IBM US IBM IBM-UNIT NJ EC 0 prime256v1
+        certificate generatecsr client w3.ibm.com IBM US IBM IBM-UNIT NJ RSA 2048 None
+        @param host: string, the hostname or IP address of the bmc
+        @param args: contains additional arguments used by the certificate replace sub command
+        @param session: the active session to use
+    """
+    httpHeader = {'Content-Type': 'application/octet-stream'}
+    httpHeader.update(xAuthHeader)
+    url = "";
+    if(args.type.lower() == 'server'):
+        url = "/redfish/v1/Managers/bmc/NetworkProtocol/HTTPS/Certificates/"
+    elif(args.type.lower() == 'client'):
+        url = "/redfish/v1/AccountService/LDAP/Certificates/"
+    elif(args.type.lower() == 'authority'):
+        url = "/redfish/v1/Managers/bmc/Truststore/Certificates/"
+    print("Generating CSR url=" + url)
+    generateCSRUrl = "https://" + host + \
+        "/redfish/v1/CertificateService/Actions/CertificateService.GenerateCSR"
+    try:
+        data ={"CertificateCollection":{"@odata.id":url},
+            "CommonName":args.commonName, "City":args.city,
+            "Country":args.country, "Organization":args.organization,
+            "OrganizationalUnit":args.organizationUnit, "State":args.state,
+            "KeyPairAlgorithm":args.keyPairAlgorithm,
+            "KeyBitLength":int(args.keyBitLength), "KeyCurveId":args.keyCurveId}
+        resp = session.post(generateCSRUrl, headers=httpHeader,
+            json=data, verify=False)
+    except(requests.exceptions.Timeout):
+        return(connectionErrHandler(args.json, "Timeout", None))
+    except(requests.exceptions.ConnectionError) as err:
+        return connectionErrHandler(args.json, "ConnectionError", err)
+    if resp.status_code != 200:
+        print(resp.text)
+        return "Failed to generate CSR"
+    else:
+       print("GenerateCSR complete.")
+    return resp.text
+
 def enableLDAP(host, args, session):
     """
          Called by the ldap function. Configures LDAP.
@@ -3909,6 +4019,39 @@ def createCommandParser():
     certReplace.add_argument('-f', '--fileloc', required=True,
         help="The absolute path to the certificate file")
     certReplace.set_defaults(func=certificateReplace)
+
+    certDisplay = certMgmt_subproc.add_parser('display',
+        help="Print the certificate")
+    certDisplay.add_argument('type', choices=['server', 'client', 'authority'],
+        help="certificate type to display")
+    certDisplay.set_defaults(func=certificateDisplay)
+
+    certLocations = certMgmt_subproc.add_parser('locations',
+        help="Certificate list")
+    certLocations.set_defaults(func=certificateLocations)
+
+    certGenerateCSR = certMgmt_subproc.add_parser('generatecsr', help="Generate CSR")
+    certGenerateCSR.add_argument('type', choices=['server', 'client', 'authority'],
+        help="Generate CSR")
+    certGenerateCSR.add_argument('city',
+        help="The city or locality of the organization making the request")
+    certGenerateCSR.add_argument('commonName',
+        help="The fully qualified domain name of the component that is being secured.")
+    certGenerateCSR.add_argument('country',
+        help="The country of the organization making the request")
+    certGenerateCSR.add_argument('organization',
+        help="The name of the organization making the request.")
+    certGenerateCSR.add_argument('organizationUnit',
+        help="The name of the unit or division of the organization making the request.")
+    certGenerateCSR.add_argument('state',
+        help="The state, province, or region of the organization making the request.")
+    certGenerateCSR.add_argument('keyPairAlgorithm',  choices=['RSA', 'EC'],
+        help="The type of key pair for use with signing algorithms.")
+    certGenerateCSR.add_argument('keyBitLength',
+        help="The length of the key in bits, if needed based on the value of the 'KeyPairAlgorithm' parameter.")
+    certGenerateCSR.add_argument('keyCurveId',
+        help="The curve ID to be used with the key, if needed based on the value of the 'KeyPairAlgorithm' parameter.")
+    certGenerateCSR.set_defaults(func=certificateGenerateCSR)
 
     # local users
     parser_users = subparsers.add_parser("local_users", help="Work with local users")
